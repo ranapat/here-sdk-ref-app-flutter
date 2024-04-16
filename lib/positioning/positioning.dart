@@ -36,6 +36,7 @@ typedef LocationUpdatedCallback = void Function(Location location);
 mixin Positioning {
   static const double initDistanceToEarth = 8000; // meters
   static final GeoCoordinates initPosition = GeoCoordinates(52.530932, 13.384915);
+  static const bool _useNativeLocationIndicator = true; // use native location indicator or custom one
 
   late HereMapController _hereMapController;
   PositioningEngine? _positioningEngine;
@@ -43,6 +44,7 @@ mixin Positioning {
   LocationUpdatedCallback? _onLocationUpdatedCallback;
   StreamSubscription? _locationUpdatesSubscription;
 
+  LocationIndicator? _locationIndicator;
   MapPolygon? _locationAccuracyCircle;
   MapMarker? _locationMarker;
   bool _locationMarkerVisible = false;
@@ -63,22 +65,34 @@ mixin Positioning {
   set locationVisible(bool visible) {
     if (_locationMarker != null) {
       if (visible) {
-        _hereMapController.mapScene.addMapMarker(_locationMarker!);
-        _hereMapController.mapScene.addMapPolygon(_locationAccuracyCircle!);
+        if (_useNativeLocationIndicator) {
+          _locationIndicator?.enable(_hereMapController);
+        } else {
+          _hereMapController.mapScene.addMapMarker(_locationMarker!);
+          _hereMapController.mapScene.addMapPolygon(_locationAccuracyCircle!);
+        }
       } else {
-        _hereMapController.mapScene.removeMapMarker(_locationMarker!);
-        _hereMapController.mapScene.removeMapPolygon(_locationAccuracyCircle!);
+        if (_useNativeLocationIndicator) {
+          _locationIndicator?.disable();
+        } else {
+          _hereMapController.mapScene.removeMapMarker(_locationMarker!);
+          _hereMapController.mapScene.removeMapPolygon(_locationAccuracyCircle!);
+        }
       }
       _locationMarkerVisible = visible;
     }
   }
 
   void _removeMarkers() {
-    if (_locationMarker != null) {
-      _hereMapController.mapScene.removeMapMarker(_locationMarker!);
-    }
-    if (_locationAccuracyCircle != null) {
-      _hereMapController.mapScene.removeMapPolygon(_locationAccuracyCircle!);
+    if (_useNativeLocationIndicator) {
+      _locationIndicator?.disable();
+    } else {
+      if (_locationMarker != null) {
+        _hereMapController.mapScene.removeMapMarker(_locationMarker!);
+      }
+      if (_locationAccuracyCircle != null) {
+        _hereMapController.mapScene.removeMapPolygon(_locationAccuracyCircle!);
+      }
     }
   }
 
@@ -110,8 +124,7 @@ mixin Positioning {
   void _initMapLocation() {
     final Location? lastKnownLocation = _positioningEngine!.lastKnownLocation;
     if (lastKnownLocation != null) {
-      final double accuracy =
-          (lastKnownLocation.horizontalAccuracyInMeters != null) ? lastKnownLocation.horizontalAccuracyInMeters! : 0;
+      final double accuracy = (lastKnownLocation.horizontalAccuracyInMeters != null) ? lastKnownLocation.horizontalAccuracyInMeters! : 0;
 
       // Show the obtained last known location on a map.
       _addMyLocationToMap(geoCoordinates: lastKnownLocation.coordinates, accuracyRadiusInMeters: accuracy);
@@ -141,20 +154,30 @@ mixin Positioning {
   }) {
     int locationMarkerSize = (UIStyle.locationMarkerSize * _hereMapController.pixelScale).truncate();
 
-    // Transparent halo around the current location.
-    _locationAccuracyCircle =
-        MapPolygon(_createGeometry(geoCoordinates, accuracyRadiusInMeters), UIStyle.accuracyCircleColor);
-    // Image on top of the current location.
-    _locationMarker = Util.createMarkerWithImagePath(
-      geoCoordinates,
-      "assets/position.svg",
-      locationMarkerSize,
-      locationMarkerSize,
-    );
+    if (_useNativeLocationIndicator) {
+      _locationIndicator = LocationIndicator()
+        ..locationIndicatorStyle = LocationIndicatorIndicatorStyle.pedestrian;
 
-    // Add the circle to the map.
-    _hereMapController.mapScene.addMapPolygon(_locationAccuracyCircle!);
-    _hereMapController.mapScene.addMapMarker(_locationMarker!);
+      _locationIndicator!.enable(_hereMapController);
+      _locationIndicator!.updateLocation(Location.withCoordinates(geoCoordinates));
+    } else {
+      // Transparent halo around the current location.
+      _locationAccuracyCircle = MapPolygon(
+          _createGeometry(geoCoordinates, accuracyRadiusInMeters),
+          UIStyle.accuracyCircleColor
+      );
+      // Image on top of the current location.
+      _locationMarker = Util.createMarkerWithImagePath(
+        geoCoordinates,
+        "assets/position.svg",
+        locationMarkerSize,
+        locationMarkerSize,
+      );
+
+      // Add the circle to the map.
+      _hereMapController.mapScene.addMapPolygon(_locationAccuracyCircle!);
+      _hereMapController.mapScene.addMapMarker(_locationMarker!);
+    }
     _locationMarkerVisible = true;
   }
 
@@ -166,9 +189,14 @@ mixin Positioning {
 
   void _onLocationUpdated(Location location) {
     _lastKnownLocation = location;
-    final double accuracy = (location.horizontalAccuracyInMeters != null) ? location.horizontalAccuracyInMeters! : 0.0;
-    _locationAccuracyCircle?.geometry = _createGeometry(location.coordinates, accuracy);
-    _locationMarker?.coordinates = location.coordinates;
+
+    if (_useNativeLocationIndicator) {
+      _locationIndicator?.updateLocation(location);
+    } else {
+      final double accuracy = (location.horizontalAccuracyInMeters != null) ? location.horizontalAccuracyInMeters! : 0.0;
+      _locationAccuracyCircle?.geometry = _createGeometry(location.coordinates, accuracy);
+      _locationMarker?.coordinates = location.coordinates;
+    }
 
     // Update the map viewport to be centered on the location.
     if (enableMapUpdate) {
