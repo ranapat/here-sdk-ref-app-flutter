@@ -20,9 +20,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:RefApp/camera/camera_animation.dart';
 import 'package:RefApp/common/extensions/error_handling/map_loader_error_extension.dart';
 import 'package:RefApp/common/file_utility.dart';
+import 'package:RefApp/common/utils/camera/camera_animation.dart';
+import 'package:RefApp/common/utils/picker/content_picker.dart';
+import 'package:RefApp/common/utils/picker/nothing_to_pick_exception.dart';
 import 'package:RefApp/routing/routing_screen.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -65,8 +67,11 @@ class LandingScreen extends StatefulWidget {
   _LandingScreenState createState() => _LandingScreenState();
 }
 
-class _LandingScreenState extends State<LandingScreen>
-    with Positioning, CameraAnimation, WidgetsBindingObserver {
+class _LandingScreenState
+    extends State<LandingScreen>
+    with Positioning, WidgetsBindingObserver,
+        CameraAnimation, ContentPicker
+{
   static const int _kLocationWarningDismissPeriod = 5; // seconds
   static const int _kLoadCustomStyleResultPopupDismissPeriod = 5; // seconds
 
@@ -83,6 +88,8 @@ class _LandingScreenState extends State<LandingScreen>
 
   @override
   HereMapController get animationMapController => _hereMapController;
+  @override
+  HereMapController get contentPickerMapController => _hereMapController;
 
   @override
   void initState() {
@@ -492,11 +499,21 @@ class _LandingScreenState extends State<LandingScreen>
       }
     });
 
-    _hereMapController.gestures.tapListener = TapListener((point) {
+    _hereMapController.gestures.tapListener = TapListener((Point2D point) async {
       if (_hereMapController.widgetPins.isEmpty) {
         _removeRouteFromMarker();
       }
-      _dismissWayPointPopup();
+      if (!_dismissPinnedPopup()) {
+        try {
+          List<PickedPlace> pickedPlaces = await pickPlaces(point);
+          _showPickedPlacePopup(pickedPlaces.first);
+          return;
+        } on NothingToPickException catch (e) {
+          print('Nothing to pick at ${e.point2d.x}, ${e.point2d.y}');
+        }
+
+        tapAt(_hereMapController.viewToGeoCoordinates(point)!);
+      }
     });
 
     _hereMapController.gestures.disableDefaultAction(GestureType.doubleTap);
@@ -516,14 +533,18 @@ class _LandingScreenState extends State<LandingScreen>
     });
   }
 
-  void _dismissWayPointPopup() {
+  bool _dismissPinnedPopup() {
     if (_hereMapController.widgetPins.isNotEmpty) {
       _hereMapController.widgetPins.first.unpin();
+
+      return true;
+    } else {
+      return false;
     }
   }
 
   void _showWayPointPopup(Point2D point) {
-    _dismissWayPointPopup();
+    _dismissPinnedPopup();
     GeoCoordinates coordinates =
         _hereMapController.viewToGeoCoordinates(point) ?? _hereMapController.camera.state.targetCoordinates;
 
@@ -532,7 +553,7 @@ class _LandingScreenState extends State<LandingScreen>
         coordinates: coordinates,
         hereMapController: _hereMapController,
         onLeftButtonPressed: (place) {
-          _dismissWayPointPopup();
+          _dismissPinnedPopup();
           _routeFromPlace = place;
           _addRouteFromPoint(coordinates);
         },
@@ -542,7 +563,7 @@ class _LandingScreenState extends State<LandingScreen>
           height: UIStyle.bigIconSize,
         ),
         onRightButtonPressed: (place) {
-          _dismissWayPointPopup();
+          _dismissPinnedPopup();
           _showRoutingScreen(place != null
               ? WayPointInfo.withPlace(
                   place: place,
@@ -560,6 +581,46 @@ class _LandingScreenState extends State<LandingScreen>
         ),
       ),
       coordinates,
+      anchor: Anchor2D.withHorizontalAndVertical(0.5, 1),
+    );
+  }
+
+  void _showPickedPlacePopup(PickedPlace pickedPlace) {
+    _dismissPinnedPopup();
+
+    _hereMapController.pinWidget(
+      PlaceActionsPopup(
+        pickedPlace: pickedPlace,
+        hereMapController: _hereMapController,
+        onLeftButtonPressed: (place) {
+          _dismissPinnedPopup();
+          _routeFromPlace = place;
+          _addRouteFromPoint(pickedPlace.coordinates);
+        },
+        leftButtonIcon: SvgPicture.asset(
+          "assets/depart_marker.svg",
+          width: UIStyle.bigIconSize,
+          height: UIStyle.bigIconSize,
+        ),
+        onRightButtonPressed: (place) {
+          _dismissPinnedPopup();
+          _showRoutingScreen(place != null
+              ? WayPointInfo.withPlace(
+            place: place,
+            originalCoordinates: pickedPlace.coordinates,
+          )
+              : WayPointInfo.withCoordinates(
+            coordinates: pickedPlace.coordinates,
+          ));
+        },
+        rightButtonIcon: SvgPicture.asset(
+          "assets/route.svg",
+          colorFilter: ColorFilter.mode(UIStyle.addWayPointPopupForegroundColor, BlendMode.srcIn),
+          width: UIStyle.bigIconSize,
+          height: UIStyle.bigIconSize,
+        ),
+      ),
+      pickedPlace.coordinates,
       anchor: Anchor2D.withHorizontalAndVertical(0.5, 1),
     );
   }
@@ -584,12 +645,16 @@ class _LandingScreenState extends State<LandingScreen>
     }
   }
 
-  void _removeRouteFromMarker() {
+  bool _removeRouteFromMarker() {
     if (_routeFromMarker != null) {
       _hereMapController.mapScene.removeMapMarker(_routeFromMarker!);
       _routeFromMarker = null;
       _routeFromPlace = null;
       locationVisible = true;
+
+      return true;
+    } else {
+      return false;
     }
   }
 

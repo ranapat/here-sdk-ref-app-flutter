@@ -116,6 +116,25 @@ class SearchEngineProxy {
     }
   }
 
+  /// Performs an asynchronous request to search for places based on given picked place.
+  ///
+  /// [pickedPlace] The picked place to search.
+  ///
+  /// [languageCode] The preferred language for the search results. When unset or unsupported language is chosen,
+  /// results will be returned in their local language.
+  ///
+  /// [callback] Callback which receives result on the main thread.
+  ///
+  /// Returns [TaskHandle]. Handle that will be used to manipulate execution of the task.
+  ///
+  TaskHandle searchByPickedPlace(PickedPlace pickedPlace, LanguageCode? languageCode, PlaceIdSearchCallback callback) {
+    if (offline) {
+      return _offlineSearchEngine.searchPickedPlace(pickedPlace, languageCode, callback);
+    } else {
+      return _onlineSearchEngine.searchPickedPlace(pickedPlace, languageCode, callback);
+    }
+  }
+
   /// Performs an asynchronous request to do a category search for [Place] instances.
   ///
   /// A list containing at least one [PlaceCategory] must be provided

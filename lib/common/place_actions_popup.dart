@@ -34,7 +34,9 @@ typedef PlaceActionCallback = void Function(Place? place);
 /// A widget that displays a pop-up window for creating a waypoint from a point on the map.
 class PlaceActionsPopup extends StatefulWidget {
   /// Coordinates of the point on the map.
-  final GeoCoordinates coordinates;
+  final GeoCoordinates? coordinates;
+  /// Picked place on the map.
+  final PickedPlace? pickedPlace;
 
   /// Map controller.
   final HereMapController hereMapController;
@@ -55,7 +57,8 @@ class PlaceActionsPopup extends StatefulWidget {
   PlaceActionsPopup({
     Key? key,
     required this.hereMapController,
-    required this.coordinates,
+    this.coordinates,
+    this.pickedPlace,
     required this.onRightButtonPressed,
     this.rightButtonIcon = const Icon(
       Icons.add,
@@ -85,12 +88,22 @@ class _PlaceActionsPopupState extends State<PlaceActionsPopup> {
   @override
   void initState() {
     super.initState();
+
+    var coordinates;
     _searchEngine = SearchEngineProxy(offline: Provider.of<AppPreferences>(context, listen: false).useAppOffline);
-    _searchTask = _searchEngine.searchByCoordinates(widget.coordinates, _searchOptions, _onSearchEnd);
-    _title = widget.coordinates.toPrettyString();
+    if (widget.coordinates != null) {
+      _searchTask = _searchEngine.searchByCoordinates(widget.coordinates!, _searchOptions, _onSearchByCoordinatesEnd);
+      _title = widget.coordinates!.toPrettyString();
+      coordinates = widget.coordinates!;
+    } else if (widget.pickedPlace != null) {
+      _searchTask = _searchEngine.searchByPickedPlace(widget.pickedPlace!, LanguageCode.enUs, _onSearchByPickedPlaceEnd);
+      _title = widget.pickedPlace!.name;
+      coordinates = widget.pickedPlace!.coordinates;
+    }
+
     int markerSize = (widget.hereMapController.pixelScale * UIStyle.searchMarkerSize * 2).round();
     _mapMarker = Util.createMarkerWithImagePath(
-      widget.coordinates,
+      coordinates,
       "assets/map_marker_wp.svg",
       markerSize,
       markerSize,
@@ -157,7 +170,7 @@ class _PlaceActionsPopupState extends State<PlaceActionsPopup> {
         ],
       );
 
-  void _onSearchEnd(SearchError? error, List<Place>? places) {
+  void _onSearchByCoordinatesEnd(SearchError? error, List<Place>? places) {
     if (error != null) {
       print('Search failed. Error: ${error.toString()}');
     }
@@ -168,6 +181,20 @@ class _PlaceActionsPopupState extends State<PlaceActionsPopup> {
     setState(() {
       _place = places.first;
       _title = places.first.address.addressText;
+    });
+  }
+
+  void _onSearchByPickedPlaceEnd(SearchError? error, Place? place) {
+    if (error != null) {
+      print('Search failed. Error: ${error.toString()}');
+    }
+    if (place == null) {
+      return;
+    }
+
+    setState(() {
+      _place = place;
+      _title = place.address.addressText;
     });
   }
 }

@@ -32,9 +32,15 @@ abstract mixin class CameraAnimation {
     flyTo(geoCoordinates, twoFingerTapZoomLevel);
   }
 
+  void tapAt(GeoCoordinates geoCoordinates) {
+    flyTo(geoCoordinates, animationMapController.camera.state.zoomLevel,
+        bowFactor: 0, duration: Duration(milliseconds: 500)
+    );
+  }
+
   void flyTo(GeoCoordinates geoCoordinates, double zoomLevel, {
     double bowFactor = 0.5,
-    int duration = 1
+    Duration duration = const Duration(seconds: 1)
   }) {
     final GeoCoordinatesUpdate geoCoordinatesUpdate = GeoCoordinatesUpdate.fromGeoCoordinates(geoCoordinates);
     final MapMeasure zoom = MapMeasure(MapMeasureKind.zoomLevel, zoomLevel);
@@ -42,9 +48,7 @@ abstract mixin class CameraAnimation {
     _cancelOngoingAnimation();
     _cameraAnimation = MapCameraAnimationFactory.flyToWithZoom(
         geoCoordinatesUpdate,
-        zoom,
-        bowFactor,
-        Duration(seconds: duration)
+        zoom, bowFactor, duration
     );
     animationMapController.camera.startAnimationWithListener(
         _cameraAnimation!,
