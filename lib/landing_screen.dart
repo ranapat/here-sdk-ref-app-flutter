@@ -20,6 +20,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:RefApp/camera/camera_animation.dart';
 import 'package:RefApp/common/extensions/error_handling/map_loader_error_extension.dart';
 import 'package:RefApp/common/file_utility.dart';
 import 'package:RefApp/routing/routing_screen.dart';
@@ -64,7 +65,8 @@ class LandingScreen extends StatefulWidget {
   _LandingScreenState createState() => _LandingScreenState();
 }
 
-class _LandingScreenState extends State<LandingScreen> with Positioning, WidgetsBindingObserver {
+class _LandingScreenState extends State<LandingScreen>
+    with Positioning, CameraAnimation, WidgetsBindingObserver {
   static const int _kLocationWarningDismissPeriod = 5; // seconds
   static const int _kLoadCustomStyleResultPopupDismissPeriod = 5; // seconds
 
@@ -78,6 +80,9 @@ class _LandingScreenState extends State<LandingScreen> with Positioning, Widgets
   ConsentUserReply? _consentState;
   MapMarker? _routeFromMarker;
   Place? _routeFromPlace;
+
+  @override
+  HereMapController get animationMapController => _hereMapController;
 
   @override
   void initState() {
@@ -492,6 +497,16 @@ class _LandingScreenState extends State<LandingScreen> with Positioning, Widgets
         _removeRouteFromMarker();
       }
       _dismissWayPointPopup();
+    });
+
+    _hereMapController.gestures.disableDefaultAction(GestureType.doubleTap);
+    _hereMapController.gestures.doubleTapListener = DoubleTapListener((Point2D point) {
+      doubleTapAt(_hereMapController.viewToGeoCoordinates(point)!);
+    });
+
+    _hereMapController.gestures.disableDefaultAction(GestureType.twoFingerTap);
+    _hereMapController.gestures.twoFingerTapListener = TwoFingerTapListener((Point2D point) {
+      twoFingerTapAt(_hereMapController.viewToGeoCoordinates(point)!);
     });
 
     _hereMapController.gestures.longPressListener = LongPressListener((state, point) {
